@@ -511,7 +511,7 @@ function Message_List() {
             class_name = selected[index];
             row = $('.'+Hm_Utils.clean_selector(class_name));
             if (action_type == 'flag') {
-                $('.icon', row).html('<img src="'+hm_flag_image_src()+'" />');
+                $('.icon', row).html('<img width="16" height="16" src="'+hm_flag_image_src()+'" />');
             }
             else {
                 $('.icon', row).empty();
@@ -764,6 +764,11 @@ var Hm_Folders = {
             for (name in Hm_Folders.unread_counts) {
                 if (!Hm_Folders.unread_counts[name]) {
                     Hm_Folders.unread_counts[name] = 0;
+                }
+                if (hm_list_path() == name && hm_page_name() == 'message_list') {
+                    var title = document.title.replace(/^\[\d+\]/, '');
+                    document.title = '['+Hm_Folders.unread_counts[name]+'] '+title;
+                    /* HERE */
                 }
                 $('.unread_'+name).html('&#160;'+Hm_Folders.unread_counts[name]+'&#160;');
             }
@@ -1287,5 +1292,6 @@ $(function() {
     if (hm_page_name() == 'home') {
         $('.pw_update').click(function() { update_password($(this).data('id')); });
     }
+    $('.content_cell').swipeRight(function() { Hm_Folders.open_folder_list(); });
 
 });

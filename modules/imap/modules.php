@@ -11,6 +11,57 @@ if (!defined('DEBUG_MODE')) { die(); }
 require_once APP_PATH.'modules/imap/hm-imap.php';
 
 /**
+ * Check for attachments when forwarding a message
+ * @subpackage imap/handler
+ */
+class Hm_Handler_imap_forward_attachments extends Hm_Handler_Module {
+    public function process() {
+        if (!array_key_exists('forward', $this->request->get)) {
+            return;
+        }
+        if (!array_key_exists('list_path', $this->request->get)) {
+            return;
+        }
+        if (!array_key_exists('uid', $this->request->get)) {
+            return;
+        }
+        $uid = $this->request->get['uid'];
+        $list_path = $this->request->get['list_path'];
+        $path = explode('_', $list_path);
+        if (count($path) != 3) {
+            return;
+        }
+        if ($path[0] != 'imap') {
+            return;
+        }
+        $filepath = $this->config->get('attachment_dir');
+        if (!$filepath) {
+            return;
+        }
+        $cache = Hm_IMAP_List::get_cache($this->session, $this->config, $path[1]);
+        $imap = Hm_IMAP_List::connect($path[1], $cache);
+        if (!$imap) {
+            return;
+        }
+        if (!$imap->select_mailbox(hex2bin($path[2]))) {
+            return;
+        }
+        $content = $imap->get_message_content($uid, 0);
+        if (!$content) {
+            return;
+        }
+        $file = array(
+            'name' => 'mail.mime',
+            'type' => 'message/rfc822',
+            'no_encoding' => true,
+            'size' => strlen($content)
+        );
+        $draft_id = count($this->session->get('compose_drafts', array()));
+        attach_file($content, $file, $filepath, $draft_id, $this);
+    }
+}
+
+/**
  * Get the status of an IMAP folder
  * @subpackage imap/handler
  */
@@ -41,6 +92,54 @@ class Hm_Handler_process_sent_source_max_setting extends Hm_Handler_Module {
 }
 
 /**
+ * Process "simple message parts" setting for the message view page in the settings page
+ * @subpackage imap/handler
+ */
+class Hm_Handler_process_simple_msg_parts extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function simple_msg_view_callback($val) {
+            return $val;
+        }
+        process_site_setting('simple_msg_parts', $this, 'simple_msg_view_callback', false, true);
+    }
+}
+
+/**
+ * Process "message part icons" setting for the message view page in the settings page
+ * @subpackage imap/handler
+ */
+class Hm_Handler_process_msg_part_icons extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function msg_part_icons_callback($val) {
+            return $val;
+        }
+        process_site_setting('msg_part_icons', $this, 'msg_part_icons_callback', false, true);
+    }
+}
+
+/**
+ * Process "text only" setting for the message view page in the settings page
+ * @subpackage imap/handler
+ */
+class Hm_Handler_process_text_only_setting extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function text_only_callback($val) {
+            return $val;
+        }
+        process_site_setting('text_only', $this, 'text_only_callback', false, true);
+    }
+}
+
+/**
  * Process "since" setting for the Sent page in the settings page
  * @subpackage imap/handler
  */
@@ -52,7 +151,6 @@ class Hm_Handler_process_sent_since_setting extends Hm_Handler_Module {
         process_site_setting('sent_since', $this, 'since_setting_callback');
     }
 }
-
 
  /**
  * Process an IMAP move/copy action
@@ -98,6 +196,48 @@ class Hm_Handler_imap_process_move extends Hm_Handler_Module {
                 $this->session->secure_cookie($this->request, 'hm_msgs', base64_encode(json_encode($msgs)), 0);
             }
             $this->out('move_count', $moved);
+        }
+    }
+}
+
+ /**
+ * Save a sent message
+ * @subpackage imap/handler
+ */
+class Hm_Handler_imap_save_sent extends Hm_Handler_Module {
+    public function process() {
+        if (!$this->get('save_sent_msg')) {
+            return;
+        }
+        $server = $this->get('save_sent_server');
+        $mime = $this->get('save_sent_msg');
+        $imap_id = false;
+        foreach (Hm_IMAP_List::dump() as $id => $imap_server) {
+            if ($server[3] == $imap_server['user'] && $server[2] == $imap_server['server']) {
+                $imap_id = $id;
+                break;
+            }
+        }
+        if (!$imap_id) {
+            return;
+        }
+        $msg = $mime->get_mime_msg();
+        $msg = str_replace("\r\n", "\n", $msg);
+        $msg = str_replace("\n", "\r\n", $msg);
+        $msg = rtrim($msg)."\r\n";
+        $cache = Hm_IMAP_List::get_cache($this->session, $this->config, $imap_id);
+        $imap = Hm_IMAP_List::connect($imap_id, $cache);
+        if (is_object($imap) && $imap->get_state() == 'authenticated') {
+            $sent_folder = $imap->get_special_use_mailboxes('sent');
+            if (!array_key_exists('sent', $sent_folder)) {
+                return;
+            }
+            if ($imap->append_start($sent_folder['sent'], strlen($msg), true)) {
+                $imap->append_feed($msg."\r\n");
+                if (!$imap->append_end()) {
+                    Hm_Msgs::add('ERRAn error occurred saving the sent message');
+                }
+            }
         }
     }
 }
@@ -241,7 +381,7 @@ class Hm_Handler_imap_download_message extends Hm_Handler_Module {
                                         echo $line;
                                     }
                                 }
-                                exit;
+                                Hm_Functions::cease();
                             }
                         }
                     }
@@ -991,7 +1131,14 @@ class Hm_Handler_imap_bust_cache extends Hm_Handler_Module {
      * Deletes all the saved IMAP cache data
      */
     public function process() {
-        $this->session->set('imap_cache', array());
+        $memcache = new Hm_Memcached($this->config);
+        list($success, $form) = $this->process_form(array('imap_server_id'));
+        if (!$success) {
+            return;
+        }
+        $key = hash('sha256', (sprintf('imap%s%s%s%s', SITE_ID, $this->session->get('fingerprint'), $form['imap_server_id'], $this->session->get('username'))));
+        $memcache->del($key);
+        Hm_Debug::add(sprintf('Busted cache for IMAP server %s', $form['imap_server_id']));
     }
 }
 
@@ -1126,12 +1273,20 @@ class Hm_Handler_imap_message_content extends Hm_Handler_Module {
                         else {
                             $max = false;
                         }
-                        $struct = $imap->search_bodystructure( $msg_struct, array('imap_part_number' => $part));
+                        $struct = $imap->search_bodystructure($msg_struct, array('imap_part_number' => $part));
                         $msg_struct_current = array_shift($struct);
                         $msg_text = $imap->get_message_content($form['imap_msg_uid'], $part, $max, $msg_struct_current);
                     }
                     else {
-                        list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                        if (!$this->user_config->get('text_only_setting', false)) {
+                            list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', 'html', $msg_struct);
+                            if (!$part) {
+                                list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                            }
+                        }
+                        else {
+                            list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                        }
                         $struct = $imap->search_bodystructure( $msg_struct, array('imap_part_number' => $part));
                         $msg_struct_current = array_shift($struct);
                         if (!trim($msg_text)) {
@@ -1159,13 +1314,18 @@ class Hm_Handler_imap_message_content extends Hm_Handler_Module {
                     $this->out('msg_headers', $msg_headers);
                     $this->out('imap_prefecth', $prefetch);
                     $this->out('imap_msg_part', "$part");
+                    $this->out('use_message_part_icons', $this->user_config->get('msg_part_icons_setting', false));
+                    $this->out('simple_msg_part_view', $this->user_config->get('simple_msg_parts_setting', false));
                     if ($msg_struct_current) {
                         $this->out('msg_struct_current', $msg_struct_current);
                     }
                     $this->out('msg_text', $msg_text);
                     $this->out('msg_download_args', sprintf("page=message&amp;uid=%d&amp;list_path=imap_%d_%s&amp;imap_download_message=1", $form['imap_msg_uid'], $form['imap_server_id'], $form['folder']));
-                    $this->session->set(sprintf('reply_details_imap_%d_%s_%s', $form['imap_server_id'], $form['folder'], $form['imap_msg_uid']),
-                        array('msg_struct' => $msg_struct_current, 'msg_text' => ($save_reply_text ? $msg_text : ''), 'msg_headers' => $msg_headers));
+                    if (!$prefetch) {
+                        clear_existing_reply_details($this->session);
+                        $this->session->set(sprintf('reply_details_imap_%d_%s_%s', $form['imap_server_id'], $form['folder'], $form['imap_msg_uid']),
+                            array('msg_struct' => $msg_struct_current, 'msg_text' => ($save_reply_text ? $msg_text : ''), 'msg_headers' => $msg_headers));
+                    }
                 }
             }
         }
@@ -1362,7 +1522,7 @@ class Hm_Output_filter_message_headers extends Hm_Output_Module {
             }
             foreach ($headers as $name => $value) {
                 if (!in_array(strtolower($name), $small_headers)) {
-                    $txt .= '<tr style="display: none;" class="long_header"><th>'.$this->trans($name).'</th><td>'.$this->html_safe($value).'</td></tr>';
+                    $txt .= '<tr style="display: none;" class="long_header"><th>'.$this->html_safe($name).'</th><td>'.$this->html_safe($value).'</td></tr>';
                 }
             }
             $txt .= '<tr><td class="header_space" colspan="2"></td></tr>';
@@ -1422,7 +1582,12 @@ class Hm_Output_display_configured_imap_servers extends Hm_Output_Module {
                 $pass_pc = $this->trans('[saved]');
             }
             elseif (array_key_exists('nopass', $vals)) {
-                $user_pc = $vals['user'];
+                if (array_key_exists('user', $vals)) {
+                    $user_pc = $vals['user'];
+                }
+                else {
+                    $user_pc = '';
+                }
                 $pass_pc = $this->trans('Password');
                 $disabled = '';
             }
@@ -1611,9 +1776,11 @@ class Hm_Output_filter_imap_folders extends Hm_Output_Module {
         $res = '';
         if ($this->get('imap_folders')) {
             foreach ($this->get('imap_folders', array()) as $id => $folder) {
-                $res .= '<li class="imap_'.intval($id).'_"><a href="#" class="imap_folder_link" data-target="imap_'.intval($id).'_">'.
-                    '<img class="account_icon" alt="'.$this->trans('Toggle folder').'" src="'.Hm_Image_Sources::$folder.'" width="16" height="16" /> '.
-                    $this->html_safe($folder).'</a></li>';
+                $res .= '<li class="imap_'.intval($id).'_"><a href="#" class="imap_folder_link" data-target="imap_'.intval($id).'_">';
+                if (!$this->get('hide_folder_icons')) {
+                    $res .= '<img class="account_icon" alt="'.$this->trans('Toggle folder').'" src="'.Hm_Image_Sources::$folder.'" width="16" height="16" /> ';
+                }
+                $res .= $this->html_safe($folder).'</a></li>';
             }
         }
         if ($res) {
@@ -1794,6 +1961,57 @@ class Hm_Output_sent_since_setting extends Hm_Output_Module {
 }
 
 /**
+ * Option to enable/disable simple message structure on the message view
+ * @subpackage imap/output
+ */
+class Hm_Output_imap_simple_msg_parts extends Hm_Output_Module {
+    protected function output() {
+        $checked = '';
+        $settings = $this->get('user_settings', array());
+        if (array_key_exists('simple_msg_parts', $settings) && $settings['simple_msg_parts']) {
+            $checked = ' checked="checked"';
+        }
+        return '<tr class="general_setting"><td><label for="simple_msg_parts">'.
+            $this->trans('Show simple message part structure when reading a message').'</label></td>'.
+            '<td><input type="checkbox" '.$checked.' id="simple_msg_parts" name="simple_msg_parts" value="1" /></td></tr>';
+    }
+}
+
+/**
+ * Option to enable/disable message part icons on the message view
+ * @subpackage imap/output
+ */
+class Hm_Output_imap_msg_icons_setting extends Hm_Output_Module {
+    protected function output() {
+        $checked = '';
+        $settings = $this->get('user_settings', array());
+        if (array_key_exists('msg_part_icons', $settings) && $settings['msg_part_icons']) {
+            $checked = ' checked="checked"';
+        }
+        return '<tr class="general_setting"><td><label for="msg_part_icons">'.
+            $this->trans('Show message part icons when reading a message').'</label></td>'.
+            '<td><input type="checkbox" '.$checked.' id="msg_part_icons" name="msg_part_icons" value="1" /></td></tr>';
+    }
+}
+
+/**
+ * Option to limit mail fromat to text only when possible (not defaulting to HTML)
+ * @subpackage imap/output
+ */
+class Hm_Output_text_only_setting extends Hm_Output_Module {
+    protected function output() {
+        $checked = '';
+        $settings = $this->get('user_settings', array());
+        if (array_key_exists('text_only', $settings) && $settings['text_only']) {
+            $checked = ' checked="checked"';
+        }
+        return '<tr class="general_setting"><td><label for="text_only">'.
+            $this->trans('Prefer text over HTML when reading messages').'</label></td>'.
+            '<td><input type="checkbox" '.$checked.' id="text_only" name="text_only" value="1" /></td></tr>';
+    }
+}
+
+/**
  * Option for the maximum number of messages per source for the All E-mail  page
  * @subpackage imap/output
  */
@@ -1914,6 +2132,7 @@ function format_imap_message_list($msg_list, $output_module, $parent_list=false,
     if ($msg_list === array(false)) {
         return $msg_list;
     }
+    $show_icons = $output_module->get('msg_list_icons');
     foreach($msg_list as $msg) {
         $row_class = 'email';
         $icon = 'env_open';
@@ -1954,6 +2173,9 @@ function format_imap_message_list($msg_list, $output_module, $parent_list=false,
                 $icon = 'env_closed';
             }
         }
+        if (trim($msg['x_auto_bcc']) === 'cypht') {
+            $icon = 'sent';
+        }
         if (stristr($msg['flags'], 'attachment')) {
             $flags[] = 'attachment';
         }
@@ -1974,6 +2196,9 @@ function format_imap_message_list($msg_list, $output_module, $parent_list=false,
         $url = '?page=message&uid='.$msg['uid'].'&list_path='.sprintf('imap_%d_%s', $msg['server_id'], $msg['folder']).'&list_parent='.$parent_value;
         if ($output_module->get('list_page', 0)) {
             $url .= '&list_page='.$output_module->html_safe($output_module->get('list_page', 1));
+        }
+        if (!$show_icons) {
+            $icon = false;
         }
         if ($style == 'news') {
             $res[$id] = message_list_row(array(
@@ -2043,9 +2268,11 @@ function process_imap_message_ids($ids) {
  * @param int $level indention level
  * @param string $part currently selected part
  * @param string $dl_args base arguments for a download link URL
+ * @param bool $use_icons flag to enable/disable message part icons
+ * @param bool $simmple_view flag to hide complex message structure
  * @return string
  */
-function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args) {
+function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args, $use_icons=false, $simple_view=false) {
     $allowed = array(
         'textplain',
         'texthtml',
@@ -2057,7 +2284,7 @@ function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args) {
         'textunknown',
         'textx-vcard',
         'textcalendar',
-        'textx-vCalendar',
+        'textx-vcalendar',
         'textx-sql',
         'textx-comma-separated-values',
         'textenriched',
@@ -2073,6 +2300,41 @@ function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args) {
         'imagepjpeg',
         'imagegif',
     );
+    $icons = array(
+        'text' => 'doc',
+        'image' => 'camera',
+        'application' => 'save',
+        'multipart' => 'folder',
+        'audio' => 'audio',
+        'video' => 'monitor',
+        'binary' => 'save',
+
+        'textx-vcard' => 'calendar',
+        'textcalendar' => 'calendar',
+        'textx-vcalendar' => 'calendar',
+        'applicationics' => 'calendar',
+        'multipartdigest' => 'spreadsheet',
+        'applicationpgp-keys' => 'key',
+        'applicationpgp-signature' => 'key',
+        'multipartsigned' => 'lock',
+        'messagerfc822' => 'env_open',
+        'octetstream' => 'paperclip',
+    );
+    $hidden_parts= array(
+        'multipartdigest',
+        'multipartsigned',
+        'multipartmixed',
+        'messagerfc822',
+    );
+    $lc_type = strtolower($vals['type']).strtolower($vals['subtype']);
+    if ($simple_view) {
+        if (filter_message_part($vals)) {
+            return '';
+        }
+        if (in_array($lc_type, $hidden_parts, true)) {
+            return '';
+        }
+    }
     if ($level > 6) {
         $class = 'row_indent_max';
     }
@@ -2095,24 +2357,44 @@ function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args) {
         $desc = '';
     }
     $filename = get_imap_part_name($vals, $id, $part, true);
+    if (!$desc && $filename) {
+        $desc = $filename;
+    }
     $size = get_imap_size($vals);
     $res = '<tr';
     if ($id == $part) {
         $res .= ' class="selected_part"';
     }
     $res .= '><td><div class="'.$class.'">';
-    if (in_array(strtolower($vals['type']).strtolower($vals['subtype']), $allowed, true)) {
+    $icon = false;
+    if ($use_icons && array_key_exists($lc_type, $icons)) {
+        $icon = $icons[$lc_type];
+    }
+    elseif ($use_icons && array_key_exists(strtolower($vals['type']), $icons)) {
+        $icon = $icons[strtolower($vals['type'])];
+    }
+    if ($icon) {
+        $res .= '<img class="msg_part_icon" src="'.Hm_Image_Sources::$$icon.'" width="16" height="16" alt="'.$output_mod->trans('Attachment').'" /> ';
+    }
+    else {
+        $res .= '<img class="msg_part_icon msg_part_placeholder" src="'.Hm_Image_Sources::$doc.'" width="16" height="16" alt="'.$output_mod->trans('Attachment').'" /> ';
+    }
+    if (in_array($lc_type, $allowed, true)) {
         $res .= '<a href="#" class="msg_part_link" data-message-part="'.$output_mod->html_safe($id).'">'.$output_mod->html_safe(strtolower($vals['type'])).
             ' / '.$output_mod->html_safe(strtolower($vals['subtype'])).'</a>';
     }
     else {
         $res .= $output_mod->html_safe(strtolower($vals['type'])).' / '.$output_mod->html_safe(strtolower($vals['subtype']));
     }
-    $res .= '</td><td>'.$output_mod->html_safe($filename);
+    /*if (!$simple_view) {
+        $res .= '</td><td>'.$output_mod->html_safe($filename);
+    }*/
     $res .= '</td><td>'.$output_mod->html_safe($size);
-    $res .= '</td><td>'.(isset($vals['encoding']) ? $output_mod->html_safe(strtolower($vals['encoding'])) : '').
-        '</td><td>'.(isset($vals['attributes']['charset']) && trim($vals['attributes']['charset']) ? $output_mod->html_safe(strtolower($vals['attributes']['charset'])) : '').
-        '</td><td>'.$output_mod->html_safe($desc).'</td>';
+    if (!$simple_view) {
+        $res .= '</td><td>'.(isset($vals['encoding']) ? $output_mod->html_safe(strtolower($vals['encoding'])) : '').
+            '</td><td>'.(isset($vals['attributes']['charset']) && trim($vals['attributes']['charset']) ? $output_mod->html_safe(strtolower($vals['attributes']['charset'])) : '');
+    }
+    $res .= '</td><td>'.$output_mod->html_safe($desc).'</td>';
     $res .= '<td class="download_link"><a href="?'.$dl_args.'&amp;imap_msg_part='.$output_mod->html_safe($id).'">'.$output_mod->trans('Download').'</a></td></tr>';
     return $res;
 }
@@ -2158,9 +2440,15 @@ function get_imap_size($vals) {
  */
 function format_msg_part_section($struct, $output_mod, $part, $dl_link, $level=0) {
     $res = '';
+    $simple_view = $output_mod->get('simple_msg_part_view', false);
+    $use_icons = $output_mod->get('use_message_part_icons', false);
     foreach ($struct as $id => $vals) {
         if (is_array($vals) && isset($vals['type'])) {
-            $res .= format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_link);
+            $row = format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_link, $use_icons, $simple_view);
+            if (!$row) {
+                $level--;
+            }
+            $res .= $row;
             if (isset($vals['subs'])) {
                 $res .= format_msg_part_section($vals['subs'], $output_mod, $part, $dl_link, ($level + 1));
             }
@@ -2172,6 +2460,24 @@ function format_msg_part_section($struct, $output_mod, $part, $dl_link, $level=0
         }
     }
     return $res;
+}
+
+/**
+ * Filter out message parts that are not attachments
+ * @param array message structure
+ * @return bool
+ */
+function filter_message_part($vals) {
+    if (array_key_exists('disposition', $vals) && is_array($vals['disposition']) && array_key_exists('inline', $vals['disposition'])) {
+        return true;
+    }
+    if (array_key_exists('file_attributes', $vals) && is_array($vals['file_attributes']) && array_key_exists('inline', $vals['file_attributes'])) {
+        return true;
+    }
+    if (array_key_exists('type', $vals) && $vals['type'] == 'multipart') {
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -2330,7 +2636,7 @@ function imap_move_same_server($ids, $action, $session, $dest_path, $config) {
     $moved = array();
     $keys = array_keys($ids);
     $server_id = array_pop($keys);
-    $cache = Hm_IMAP_List::get_cache($session, $server_id);
+    $cache = Hm_IMAP_List::get_cache($session, $config, $server_id);
     $imap = Hm_IMAP_List::connect($server_id, $cache);
     foreach ($ids[$server_id] as $folder => $msgs) {
         if ($imap && $imap->select_mailbox(hex2bin($folder))) {
@@ -2494,4 +2800,15 @@ function get_imap_part_name($struct, $uid, $part_id, $no_default=false) {
         return '';
     }
     return 'message_'.$uid.'_part_'.$part_id.$extension;
+}
+
+/**
+ * @subpackage imap/functions
+ */
+function clear_existing_reply_details($session) {
+    foreach ($session->dump() as $name => $val) {
+        if (substr($name, 0, 19) == 'reply_details_imap_') {
+            $session->del($name);
+        }
+    }
 }

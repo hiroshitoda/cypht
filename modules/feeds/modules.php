@@ -630,6 +630,7 @@ class Hm_Output_filter_feed_list_data extends Hm_Output_Module {
         else {
             $src_callback = 'safe_output_callback';
         }
+        $show_icons = $this->get('msg_list_icons');
         foreach ($this->get('feed_list_data', array()) as $item) {
             $row_style = 'feeds';
             if (isset($item['id']) && !isset($item['guid'])) {
@@ -705,6 +706,9 @@ class Hm_Output_filter_feed_list_data extends Hm_Output_Module {
                 else {
                     $from = '';
                 }
+                if (!$show_icons) {
+                    $icon = false;
+                }
                 $row_style .= ' '.str_replace(' ', '_', $item['server_name']);
                 if ($style == 'news') {
                     $res[$id] = message_list_row(array(
@@ -746,7 +750,12 @@ class Hm_Output_filter_feed_list_data extends Hm_Output_Module {
  * @subpackage feeds/functions
  */
 function feed_source_callback($vals, $style, $output_mod) {
-    $img = '<img src="'.Hm_Image_Sources::${$vals[2]}.'" />';
+    if ($vals[2]) {
+        $img = '<img src="'.Hm_Image_Sources::${$vals[2]}.'" />';
+    }
+    else {
+        $img = '';
+    }
     if ($style == 'email') {
         return sprintf('<td class="%s" title="%s"><a href="?page=message_list&list_path=feeds_%s">%s%s</td>',
             $output_mod->html_safe($vals[0]), $output_mod->html_safe($vals[1]), $output_mod->html_safe($vals[3]),
@@ -767,13 +776,18 @@ class Hm_Output_filter_feed_folders extends Hm_Output_Module {
         $res = '';
         $folders = $this->get('feed_folders', array());
         if (is_array($folders) && !empty($folders)) {
-            $res .= '<li class="menu_feeds"><a class="unread_link" href="?page=message_list&amp;list_path=feeds">'.
-            '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$rss_alt).'" alt="" width="16" height="16" /> '.$this->trans('All').'</a> <span class="unread_feed_count"></span></li>';
+            $res .= '<li class="menu_feeds"><a class="unread_link" href="?page=message_list&amp;list_path=feeds">';
+            if (!$this->get('hide_folder_icons')) {
+                $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$rss_alt).'" alt="" width="16" height="16" /> ';
+            }
+            $res .= $this->trans('All').'</a> <span class="unread_feed_count"></span></li>';
             foreach ($this->get('feed_folders') as $id => $folder) {
                 $res .= '<li class="feeds_'.$this->html_safe($id).'">'.
-                    '<a data-id="feeds_'.$this->html_safe($id).'" href="?page=message_list&list_path=feeds_'.$this->html_safe($id).'">'.
-                    '<img class="account_icon" alt="'.$this->trans('Load Feed').'" src="'.Hm_Image_Sources::$rss.'" width="16" height="16" /> '.
-                    $this->html_safe($folder).'</a></li>';
+                    '<a data-id="feeds_'.$this->html_safe($id).'" href="?page=message_list&list_path=feeds_'.$this->html_safe($id).'">';
+                if (!$this->get('hide_folder_icons')) {
+                    $res .= '<img class="account_icon" alt="'.$this->trans('Load Feed').'" src="'.Hm_Image_Sources::$rss.'" width="16" height="16" /> ';
+                }
+                $res .= $this->html_safe($folder).'</a></li>';
             }
         }
         if ($res) {

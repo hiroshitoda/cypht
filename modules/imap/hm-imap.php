@@ -696,7 +696,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
         if ($this->is_supported( 'X-GM-EXT-1' )) {
             $command .= 'X-GM-MSGID X-GM-THRID X-GM-LABELS ';
         }
-        $command .= "BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE CONTENT-TYPE X-PRIORITY TO LIST-ARCHIVE REFERENCES MESSAGE-ID)])\r\n";
+        $command .= "BODY.PEEK[HEADER.FIELDS (SUBJECT X-AUTO-BCC FROM DATE CONTENT-TYPE X-PRIORITY TO LIST-ARCHIVE REFERENCES MESSAGE-ID)])\r\n";
         $cache_command = $command.(string)$raw;
         $cache = $this->check_cache($cache_command);
         if ($cache !== false) {
@@ -706,8 +706,8 @@ class Hm_IMAP extends Hm_IMAP_Cache {
         $res = $this->get_response(false, true);
         $status = $this->check_response($res, true);
         $tags = array('X-GM-MSGID' => 'google_msg_id', 'X-GM-THRID' => 'google_thread_id', 'X-GM-LABELS' => 'google_labels', 'UID' => 'uid', 'FLAGS' => 'flags', 'RFC822.SIZE' => 'size', 'INTERNALDATE' => 'internal_date');
-        $junk = array('MESSAGE-ID', 'REFERENCES', 'LIST-ARCHIVE', 'SUBJECT', 'FROM', 'CONTENT-TYPE', 'TO', '(', ')', ']', 'X-PRIORITY', 'DATE');
-        $flds = array('message-id' => 'message_id', 'references' => 'references', 'list-archive' => 'list_archive', 'date' => 'date', 'from' => 'from', 'to' => 'to', 'subject' => 'subject', 'content-type' => 'content_type', 'x-priority' => 'x_priority');
+        $junk = array('X-AUTO-BCC', 'MESSAGE-ID', 'REFERENCES', 'LIST-ARCHIVE', 'SUBJECT', 'FROM', 'CONTENT-TYPE', 'TO', '(', ')', ']', 'X-PRIORITY', 'DATE');
+        $flds = array('x-auto-bcc' => 'x_auto_bcc', 'message-id' => 'message_id', 'references' => 'references', 'list-archive' => 'list_archive', 'date' => 'date', 'from' => 'from', 'to' => 'to', 'subject' => 'subject', 'content-type' => 'content_type', 'x-priority' => 'x_priority');
         $headers = array();
         foreach ($res as $n => $vals) {
             if (isset($vals[0]) && $vals[0] == '*') {
@@ -727,6 +727,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
                 $google_msg_id = '';
                 $google_thread_id = '';
                 $google_labels = '';
+                $x_auto_bcc = '';
                 $count = count($vals);
                 for ($i=0;$i<$count;$i++) {
                     if ($vals[$i] == 'BODY[HEADER.FIELDS') {
@@ -739,7 +740,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
                         foreach ($lines as $line) {
                             $header = strtolower(substr($line, 0, strpos($line, ':')));
                             if (!$header || (!isset($flds[$header]) && $last_header)) {
-                                ${$flds[$last_header]} .= ltrim($line);
+                                ${$flds[$last_header]} .= str_replace("\t", " ", $line);
                             }
                             elseif (isset($flds[$header])) {
                                 ${$flds[$header]} = substr($line, (strpos($line, ':') + 1));
@@ -775,7 +776,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
                                      'date' => $date, 'from' => $from, 'to' => $to, 'subject' => $subject, 'content-type' => $content_type,
                                      'timestamp' => time(), 'charset' => $cset, 'x-priority' => $x_priority, 'google_msg_id' => $google_msg_id,
                                      'google_thread_id' => $google_thread_id, 'google_labels' => $google_labels, 'list_archive' => $list_archive,
-                                     'references' => $references, 'message_id' => $message_id);
+                                     'references' => $references, 'message_id' => $message_id, 'x_auto_bcc' => $x_auto_bcc);
 
                     if ($raw) {
                         $headers[$uid] = array_map('trim', $headers[$uid]);
@@ -1104,7 +1105,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
                                     continue;
                                 }
                                 if (isset($headers[$i]) && trim($line) && ($line{0} == "\t" || $line{0} == ' ')) {
-                                    $headers[$i][1] .= trim($line);
+                                    $headers[$i][1] .= str_replace("\t", " ", $line);
                                 }
                                 elseif ($split) {
                                     $i++;
@@ -1426,6 +1427,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
      */
     public function message_action($action, $uids, $mailbox=false, $keyword=false) {
         $status = false;
+        $command = false;
         $uid_strings = array();
         if (is_array($uids)) {
             if (count($uids) > 1000) {
@@ -1488,11 +1490,18 @@ class Hm_IMAP extends Hm_IMAP_Cache {
                     $command = "UID COPY $uid_string \"".$this->utf7_encode($mailbox)."\"\r\n";
                     break;
                 case 'MOVE':
+                    if (!$this->is_clean($mailbox, 'mailbox')) {
+                        return false;
+                    }
                     if ($this->is_supported('MOVE')) {
-                        if (!$this->is_clean($mailbox, 'mailbox')) {
-                            return false;
-                        }
                         $command = "UID MOVE $uid_string \"".$this->utf7_encode($mailbox)."\"\r\n";
+                    }
+                    else {
+                        if ($this->message_action('COPY', $uids, $mailbox, $keyword)) {
+                            if ($this->message_action('DELETE', $uids, $mailbox, $keyword)) {
+                                $command = "EXPUNGE\r\n";
+                            }
+                        }
                     }
                     break;
             }
@@ -1965,7 +1974,7 @@ class Hm_IMAP extends Hm_IMAP_Cache {
 
             return array($msg_part_num, $this->get_message_content($uid, $msg_part_num, false, $struct));
         } 
-        return false;
+        return array(false, false);
     }
 
     /**

@@ -26,6 +26,17 @@ class Hm_Test_PHP_Session extends PHPUnit_Framework_TestCase {
      * @preserveGlobalState disabled
      * @runInSeparateProcess
      */
+    public function test_dump() {
+        $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
+        $request = new Hm_Mock_Request('HTTP');
+        $session->set('foo', 'bar');
+        $this->assertEquals(array('foo' => 'bar'), $session->dump());
+        $session->destroy($request);
+    }
+    /**
+     * @preserveGlobalState disabled
+     * @runInSeparateProcess
+     */
     public function test_record_unsaved() {
         $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
         $request = new Hm_Mock_Request('HTTP');
@@ -75,6 +86,12 @@ class Hm_Test_PHP_Session extends PHPUnit_Framework_TestCase {
         $session->destroy($request);
 
         $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
+        $request = new Hm_Mock_Request('HTTP');
+        $session->check($request, 'unittestuser', 'unittestpass', false);
+        $this->assertTrue($session->is_active());
+        $session->destroy($request);
+
+        $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
         $session->check($request, 'nobody', 'knows');
         $this->assertFalse($session->is_active());
         $session->destroy($request);
@@ -107,6 +124,8 @@ class Hm_Test_PHP_Session extends PHPUnit_Framework_TestCase {
         $request->server['HTTP_HOST'] = 'test';
         $session->check_fingerprint($request);
         $this->assertFalse($session->is_active());
+        $session->set('fingerprint', false);
+        $session->check_fingerprint($request);
         $session->destroy($request);
 
     }
@@ -161,10 +180,18 @@ class Hm_Test_PHP_Session extends PHPUnit_Framework_TestCase {
     public function test_session_params() {
         $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
         $request = new Hm_Mock_Request('HTTP');
+        $request->server['HTTP_HOST'] = 'test';
         $this->assertEquals(array(false, 'asdf', 'test'), $session->set_session_params($request));
         $request->tls = true;
         $request->path = 'test';
         $this->assertEquals(array(true, 'test', 'test'), $session->set_session_params($request));
+        $session->destroy($request);
+
+        $this->config->set('cookie_domain', 'none');
+        $session = new Hm_PHP_Session($this->config, 'Hm_Auth_DB');
+        $request = new Hm_Mock_Request('HTTP');
+        $this->assertEquals(array(false, 'asdf', false), $session->set_session_params($request));
+
         $session->destroy($request);
     }
     /**

@@ -178,7 +178,7 @@ function message_list_row($values, $id, $style, $output_mod, $row_class='') {
  */
 function safe_output_callback($vals, $style, $output_mod) {
     $img = '';
-    if (count($vals) == 3) {
+    if (count($vals) == 3 && $vals[2]) {
         $img = '<img src="'.Hm_Image_Sources::${$vals[2]}.'" />';
     }
     if ($style == 'email') {
@@ -222,7 +222,7 @@ function checkbox_callback($vals, $style, $output_mod) {
  */
 function subject_callback($vals, $style, $output_mod) {
     $img = '';
-    if (count($vals) == 4) {
+    if (count($vals) == 4 && $vals[3]) {
         $img = '<img src="'.Hm_Image_Sources::${$vals[3]}.'" />';
     }
     $subject = $output_mod->html_safe($vals[0]);
@@ -262,20 +262,26 @@ function date_callback($vals, $style, $output_mod) {
  */
 function icon_callback($vals, $style, $output_mod) {
     $icons = '';
+    $title = array();
+    $show_icons = $output_mod->get('msg_list_icons');
     if (in_array('flagged', $vals[0])) {
-        $icons .= '<img src="'.Hm_Image_Sources::$star.'" width="16" height="16" alt="'.$output_mod->trans('Flagged').'" />';
+        $icons .= $show_icons ? '<img src="'.Hm_Image_Sources::$star.'" width="16" height="16" alt="'.$output_mod->trans('Flagged').'" />' : ' F';
+        $title[] = $output_mod->trans('Flagged');
     }
     if (in_array('answered', $vals[0])) {
-        $icons .= '<img src="'.Hm_Image_Sources::$circle_check.'" width="16" height="16" alt="'.$output_mod->trans('Answered').'" />';
+        $icons .= $show_icons ? '<img src="'.Hm_Image_Sources::$circle_check.'" width="16" height="16" alt="'.$output_mod->trans('Answered').'" />' : ' A';
+        $title[] = $output_mod->trans('Answered');
     }
     if (in_array('attachment', $vals[0])) {
-        $icons .= '<img src="'.Hm_Image_Sources::$paperclip.'" width="16" height="16" alt="'.$output_mod->trans('Attachment').'" />';
+        $icons .= $show_icons ? '<img src="'.Hm_Image_Sources::$paperclip.'" width="16" height="16" alt="'.$output_mod->trans('Attachment').'" />' : ' +';
+        $title[] = $output_mod->trans('Attachment');
     }
+    $title = implode(', ', $title);
     if ($style == 'email') {
-        return sprintf('<td class="icon">%s</td>', $icons);
+        return sprintf('<td class="icon" title="%s">%s</td>', $title, $icons);
     }
     elseif ($style == 'news') {
-        return sprintf('<div class="icon">%s</div>', $icons);
+        return sprintf('<div class="icon" title="%s">%s</div>', $title, $icons);
     }
 }
 

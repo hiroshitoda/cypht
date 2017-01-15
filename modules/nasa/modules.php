@@ -61,6 +61,9 @@ class Hm_Handler_fetch_apod_content extends Hm_Handler_Module {
             $res = $api->command(sprintf(APOD_URL.'&date=%s', $key, $date));
             $this->out('apod_data', $res);
             $this->out('apod_date', $date);
+            $headers = $this->get('http_headers');
+            $headers['Content-Security-Policy'] = str_replace('img-src', 'img-src http://apod.nasa.gov', $headers['Content-Security-Policy']);
+            $this->out('http_headers', $headers);
         }
     }
 }
@@ -100,8 +103,8 @@ class Hm_Output_apod_content extends Hm_Output_Module {
             }
             if (array_key_exists('media_type', $data)) {
                 if ($data['media_type'] == 'image' && array_key_exists('url', $data)) {
-                    $res .= '<div class="apod_image"><a target="_blank" href="'.$this->html_safe($data['url']).
-                        '" title="'.$this->trans('Picture of the day').'">'.$this->html_safe($data['url']).'</a></div>';
+                    $res .= '<div class="apod_image"><img class="msg_img" src="'.$this->html_safe($data['url']).
+                        '" alt="'.$this->trans('Picture of the day').'" /></div>';
                 }
                 elseif ($data['media_type'] == 'video' && array_key_exists('url', $data)) {
                     $res .= '<div class="apod_video"><a target="_blank" href="'.$this->html_safe($data['url']).'">YouTube</a></div>';
@@ -150,9 +153,11 @@ class Hm_Output_nasa_connect_section extends Hm_Output_Module {
 class Hm_Output_nasa_folders extends Hm_Output_Module {
     protected function output() {
         if ($this->get('nasa_api_key')) {
-            $res = '<li class="menu_nasa_apod"><a class="unread_link" href="?page=nasa_apod">'.
-                '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$globe).
-                '" alt="" width="16" height="16" /> '.$this->trans('APOD').'</a></li>';
+            $res = '<li class="menu_nasa_apod"><a class="unread_link" href="?page=nasa_apod">';
+            if (!$this->get('hide_folder_icons')) {
+                $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$globe).'" alt="" width="16" height="16" /> ';
+            }
+            $res .= $this->trans('APOD').'</a></li>';
             $this->append('folder_sources', array('nASA_folders', $res));
         }
     }

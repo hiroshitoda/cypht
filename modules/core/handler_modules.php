@@ -7,6 +7,19 @@
  */
 
 /**
+ * Check the folder list icon setting
+ * @subpackage core/handler
+ */
+class Hm_Handler_check_folder_icon_setting extends Hm_Handler_Module {
+    /***
+     * set a flag to use folder list icons or not
+     */
+    public function process() {
+        $this->out('hide_folder_icons', $this->user_config->get('no_folder_icons_setting', false));
+    }
+}
+
+/**
  * Process a password update 
  * @subpackage core/handler
  */
@@ -151,20 +164,20 @@ class Hm_Handler_http_headers extends Hm_Handler_Module {
     public function process() {
         $headers = array();
         if ($this->get('language')) {
-            $headers[] = 'Content-Language: '.substr($this->get('language'), 0, 2);
+            $headers['Content-Language'] = substr($this->get('language'), 0, 2);
         }
         if ($this->request->tls) {
-            $headers[] = 'Strict-Transport-Security: max-age=31536000';
+            $headers['Strict-Transport-Security'] = 'max-age=31536000';
         }
-        $headers[] = 'X-Frame-Options: SAMEORIGIN';
-        $headers[] = 'X-XSS-Protection: 1; mode=block';
-        $headers[] = 'X-Content-Type-Options: nosniff';
-        $headers[] = 'Expires: '.gmdate('D, d M Y H:i:s \G\M\T', strtotime('-1 year'));
-        $headers[] = "Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';";
+        $headers['X-Frame-Options'] = 'SAMEORIGIN';
+        $headers['X-XSS-Protection'] = '1; mode=block';
+        $headers['X-Content-Type-Options'] = 'nosniff';
+        $headers['Expires'] = gmdate('D, d M Y H:i:s \G\M\T', strtotime('-1 year'));
+        $headers['Content-Security-Policy'] = "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline';";
         if ($this->request->type == 'AJAX') {
-            $headers[] = 'Content-Type: application/json';
+            $headers['Content-Type'] = 'application/json';
         }
-        $this->out('http_headers', $headers);
+        $this->out('http_headers', $headers, false);
     }
 }
 
@@ -185,6 +198,38 @@ class Hm_Handler_process_list_style_setting extends Hm_Handler_Module {
             return 'email_style';
         }
         process_site_setting('list_style', $this, 'list_style_callback');
+    }
+}
+
+/**
+ * Process "hide folder list icons" setting 
+ * @subpackage core/handler
+ */
+class Hm_Handler_process_hide_folder_icons extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function hide_folder_icons_callback($val) {
+            return $val;
+        }
+        process_site_setting('no_folder_icons', $this, 'hide_folder_icons_callback', false, true);
+    }
+}
+
+/**
+ * Process "show icons in message lists" setting for the message list page in the settings page
+ * @subpackage core/handler
+ */
+class Hm_Handler_process_show_list_icons extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function show_list_icons_callback($val) {
+            return $val;
+        }
+        process_site_setting('show_list_icons', $this, 'show_list_icons_callback', false, true);
     }
 }
 
@@ -485,9 +530,6 @@ class Hm_Handler_login extends Hm_Handler_Module {
  * @subpackage core/handler
  */
 class Hm_Handler_default_page_data extends Hm_Handler_Module {
-    /**
-     * For now the data_sources array is the only default
-     */
     public function process() {
         $this->out('data_sources', array(), false);
         $this->out('encrypt_ajax_requests', $this->config->get('encrypt_ajax_requests', false));
@@ -640,6 +682,7 @@ class Hm_Handler_message_list_type extends Hm_Handler_Module {
         $this->out('message_list_since', $message_list_since, false);
         $this->out('per_source_limit', $per_source_limit, false);
         $this->out('no_message_list_headers', $no_list_headers);
+        $this->out('msg_list_icons', $this->user_config->get('show_list_icons_setting', false));
         $this->out('message_list_fields', array(
             array('chkbox_col', false, false),
             array('source_col', 'source', 'Source'),

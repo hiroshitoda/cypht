@@ -398,13 +398,17 @@ class Hm_Output_github_folders extends Hm_Output_Module {
     protected function output() {
         $details = $this->get('github_connect_details', array());
         if (!empty($details)) {
-            $res = '<li class="menu_github_all"><a class="unread_link" href="?page=message_list&list_path=github_all">'.
-                '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$code).
-                '" alt="" width="16" height="16" /> '.$this->trans('All').'</a></li>';
+            $res = '<li class="menu_github_all"><a class="unread_link" href="?page=message_list&list_path=github_all">';
+            if (!$this->get('hide_folder_icons')) {
+                $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$code).'" alt="" width="16" height="16" /> ';
+            }
+            $res .= $this->trans('All').'</a></li>';
             foreach ($this->get('github_repos', array()) as $repo) {
-                $res .= '<li class="menu_github_'.$this->html_safe($repo).'"><a class="unread_link" href="?page=message_list&list_path=github_'.$this->html_safe($repo).'">'.
-                    '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$code).
-                    '" alt="" width="16" height="16" /> '.$this->html_safe(explode('/', urldecode($repo))[1]).'</a></li>';
+                $res .= '<li class="menu_github_'.$this->html_safe($repo).'"><a class="unread_link" href="?page=message_list&list_path=github_'.$this->html_safe($repo).'">';
+                if (!$this->get('hide_folder_icons')) {
+                    $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$code).'" alt="" width="16" height="16" /> ';
+                }
+                $res .= $this->html_safe(explode('/', urldecode($repo))[1]).'</a></li>';
             }
             $this->append('folder_sources', array('github_folders', $res));
         }
@@ -419,6 +423,7 @@ class Hm_Output_filter_github_data extends Hm_Output_Module {
         $res = array();
         $login_time = false;
         $unread_only = false;
+        $show_icons = $this->get('msg_list_icons');
         if ($this->get('login_time')) {
             $login_time = $this->get('login_time');
         }
@@ -482,11 +487,15 @@ class Hm_Output_filter_github_data extends Hm_Output_Module {
                 $style = 'news';
             }
             $row_class .= ' '.$repo_name;
+            $icon = 'code';
+            if (!$show_icons) {
+                $icon = '';
+            }
             if ($style == 'news') {
                 $res[$id] = message_list_row(array(
                         array('checkbox_callback', $id),
                         array('icon_callback', $flags),
-                        array('subject_callback', $subject, $url, $flags, 'code'),
+                        array('subject_callback', $subject, $url, $flags, $icon),
                         array('safe_output_callback', 'source', $repo_name),
                         array('safe_output_callback', 'from', $from),
                         array('date_callback', human_readable_interval($date), $ts),
@@ -500,7 +509,7 @@ class Hm_Output_filter_github_data extends Hm_Output_Module {
             else {
                 $res[$id] = message_list_row(array(
                         array('checkbox_callback', $id),
-                        array('safe_output_callback', 'source', $repo_name, 'code'),
+                        array('safe_output_callback', 'source', $repo_name, $icon),
                         array('safe_output_callback', 'from', $from),
                         array('subject_callback', $subject, $url, $flags),
                         array('date_callback', human_readable_interval($date), $ts),

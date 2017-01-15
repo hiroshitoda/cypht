@@ -258,9 +258,11 @@ class Hm_Output_wordpress_folders extends Hm_Output_Module {
     protected function output() {
         $details = $this->get('wp_connect_details', array());
         if (!empty($details)) {
-            $res = '<li class="menu_wp_notifications"><a class="unread_link" href="?page=message_list&list_path=wp_notifications">'.
-                '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$w).
-                '" alt="" width="16" height="16" /> '.$this->trans('Notifications').'</a></li>';
+            $res = '<li class="menu_wp_notifications"><a class="unread_link" href="?page=message_list&list_path=wp_notifications">';
+            if (!$this->get('hide_folder_icons')) {
+                $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$w).'" alt="" width="16" height="16" /> ';
+            }
+            $res .= $this->trans('Notifications').'</a></li>';
             $this->append('folder_sources', array('wordPress_folders', $res));
         }
         return '';
@@ -298,6 +300,7 @@ class Hm_Output_filter_wp_notification_data extends Hm_Output_Module {
         else {
             $cutoff = 0;
         }
+        $show_icons = $this->get('msg_list_icons');
         foreach ($this->get('wp_notice_data', array()) as $vals) {
             $row_class = 'wordpress notifications';
             if (array_key_exists('id', $vals)) {
@@ -325,12 +328,16 @@ class Hm_Output_filter_wp_notification_data extends Hm_Output_Module {
                 if ($unread_only && !in_array('unseen', $flags, true)) {
                     continue;
                 }
+                $icon = '';
                 $date = date('r', $ts);
+                if ($show_icons) {
+                    $icon = 'w';
+                }
                 if ($style == 'news') {
                     $res[$id] = message_list_row(array(
                             array('checkbox_callback', $id),
                             array('icon_callback', $flags),
-                            array('subject_callback', $subject, $url, $flags, 'w'),
+                            array('subject_callback', $subject, $url, $flags, $icon),
                             array('safe_output_callback', 'source', 'WordPress'),
                             array('safe_output_callback', 'from', $from),
                             array('date_callback', human_readable_interval($date), $ts),
@@ -344,7 +351,7 @@ class Hm_Output_filter_wp_notification_data extends Hm_Output_Module {
                 else {
                     $res[$id] = message_list_row(array(
                             array('checkbox_callback', $id),
-                            array('safe_output_callback', 'source', 'WordPress', 'w'),
+                            array('safe_output_callback', 'source', 'WordPress', $icon),
                             array('safe_output_callback', 'from', $from),
                             array('subject_callback', $subject, $url, $flags),
                             array('date_callback', human_readable_interval($date), $ts),

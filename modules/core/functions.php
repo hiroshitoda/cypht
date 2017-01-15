@@ -58,6 +58,8 @@ function interface_langs() {
         'ro' => 'Romanian',
         'nl' => 'Dutch',
         'ja' => 'Japanese',
+        'hu' => 'Hungarian',
+        'pt-br' => 'Brazilian Portuguese',
     );
 }
 

@@ -36,7 +36,7 @@ class Hm_Handler_compose_profile_data extends Hm_Handler_Module {
         $profiles = array();
         foreach ($this->user_config->dump() as $name => $vals) {
             if (preg_match("/^profile_/", $name) && is_array($vals)) {
-                if (array_key_exists('profile_smtp', $vals) && $vals['profile_smtp']) {
+                if (array_key_exists('profile_smtp', $vals) && ($vals['profile_smtp'] === 0 || $vals['profile_smtp'])) {
                     $vals['name'] = explode('_', $name);
                     $profiles[$vals['profile_smtp']] = $vals;
                 }
@@ -208,9 +208,11 @@ class Hm_Output_profile_edit_form extends Hm_Output_Module {
  */
 class Hm_Output_profile_page_link extends Hm_Output_Module {
     protected function output() {
-        $res = '<li class="menu_profiles"><a class="unread_link" href="?page=profiles">'.
-            '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$person).
-            '" alt="" width="16" height="16" /> '.$this->trans('Profiles').'</a></li>';
+        $res = '<li class="menu_profiles"><a class="unread_link" href="?page=profiles">';
+        if (!$this->get('hide_folder_icons')) {
+            $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$person).'" alt="" width="16" height="16" /> ';
+        }
+        $res .= $this->trans('Profiles').'</a></li>';
         if ($this->format == 'HTML5') {
             return $res;
         }

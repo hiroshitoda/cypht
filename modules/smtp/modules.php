@@ -117,38 +117,31 @@ class Hm_Handler_smtp_delete_attached_file extends Hm_Handler_Module {
  */
 class Hm_Handler_smtp_attach_file extends Hm_Handler_Module {
     public function process() {
-        if (array_key_exists('upload_file', $this->request->files) && array_key_exists('draft_id', $this->request->post)) {
-            $file = $this->request->files['upload_file'];
-            $draft_id = $this->request->post['draft_id'];
-            if (is_readable($file['tmp_name'])) {
-                $content = file_get_contents($file['tmp_name']);
-                if ($content) {
-                    $content = Hm_Crypt::ciphertext($content, Hm_Request_Key::generate());
-                    $filename = hash('sha512', $content); 
-                    $filepath = $this->config->get('attachment_dir');
-                    if ($filepath) {
-                        $filepath = rtrim($filepath, '/');
-                        if (@file_put_contents($filepath.'/'.$filename, $content)) {
-                            $file['filename'] = $filepath.'/'.$filename;
-                            $file['basename'] = $filename; 
-                            save_uploaded_file($draft_id, $file, $this->session);
-                            $this->out('upload_file_details', $file);
-                        }
-                        else {
-                            Hm_Msgs::add('ERRAn error occurred saving the uploaded file.');
-                        }
-                    }
-                    else {
-                        Hm_Msgs::add('ERRNo directory configured for uploaded files.');
-                    }
-                }
-                else {
-                    Hm_Msgs::add('ERRAn error occurred reading the uploaded file.');
-                }
-            }
-            else {
-                Hm_Msgs::add('ERRAn error occurred reading the uploaded file.');
-            }
+        if (!array_key_exists('upload_file', $this->request->files)) {
+            return;
+        }
+        if (!array_key_exists('draft_id', $this->request->post)) {
+            return;
+        }
+        $file = $this->request->files['upload_file'];
+        $draft_id = $this->request->post['draft_id'];
+        $filepath = $this->config->get('attachment_dir');
+
+        if (!$filepath) {
+            Hm_Msgs::add('ERRNo directory configured for uploaded files.');
+            return;
+        }
+        if (!is_readable($file['tmp_name'])) {
+            Hm_Msgs::add('ERRAn error occurred saving the uploaded file.');
+            return;
+        }
+        $content = file_get_contents($file['tmp_name']);
+        if (!$content) {
+            Hm_Msgs::add('ERRAn error occurred reading the uploaded file.');
+            return;
+        }
+        if (!attach_file($content, $file, $filepath, $draft_id, $this)) {
+            Hm_Msgs::add('ERRAn error occurred attaching the uploaded file.');
         }
     }
 }
@@ -405,7 +398,8 @@ class Hm_Handler_smtp_connect extends Hm_Handler_Module {
                 Hm_Msgs::add("Successfully authenticated to the SMTP server");
             }
             elseif ($smtp && $smtp->state == 'connected') {
-                Hm_Msgs::add("ERRConnected, but failed to authenticated to the SMTP server");
+                # TODO: needs translated
+                Hm_Msgs::add("ERRConnected, but failed to authenticate to the SMTP server");
             }
             else {
                 Hm_Msgs::add("ERRFailed to authenticate to the SMTP server");
@@ -461,7 +455,7 @@ class Hm_Handler_process_compose_form_submit extends Hm_Handler_Module {
                     $from = $smtp_details['user'];
                     if (array_key_exists($form['smtp_server_id'], $profiles)) {
                         if ($profiles[$form['smtp_server_id']]['name'][1] == 'imap') {
-                            $imap_server = $profiles[$form['smtp_server_id']]['name'][2];
+                            $imap_server = $profiles[$form['smtp_server_id']]['name'];
                         }
                         $from_name = $profiles[$form['smtp_server_id']]['profile_name'];
                         $reply_to = $profiles[$form['smtp_server_id']]['profile_replyto'];
@@ -508,12 +502,14 @@ class Hm_Handler_process_compose_form_submit extends Hm_Handler_Module {
                                 Hm_Msgs::add(sprintf("ERR%s", $err_msg));
                             }
                             else {
-                                /* TODO: check $imap_server, connect and check for Sent folder, append to
-                                 * folder if found */
                                 $auto_bcc = $this->user_config->get('smtp_auto_bcc_setting', false);
                                 if ($auto_bcc) {
                                     $mime->set_auto_bcc($from);
                                     $bcc_err_msg = $smtp->send_message($from, array($from), $mime->get_mime_msg());
+                                }
+                                if ($imap_server) {
+                                    $this->out('save_sent_server', $imap_server);
+                                    $this->out('save_sent_msg', $mime);
                                 }
                                 $this->out('msg_sent', true);
                                 $failed = false;
@@ -556,8 +552,11 @@ class Hm_Handler_smtp_auto_bcc_check extends Hm_Handler_Module {
  */
 class Hm_Output_sent_folder_link extends Hm_Output_Module {
     protected function output() {
-        $res = '<li class="menu_sent"><a class="unread_link" href="?page=message_list&amp;list_path=sent">'.
-            '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$sent).'" alt="" width="16" height="16" /> '.$this->trans('Sent').'</a></li>';
+        $res = '<li class="menu_sent"><a class="unread_link" href="?page=message_list&amp;list_path=sent">';
+        if (!$this->get('hide_folder_icons')) {
+            $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$sent).'" alt="" width="16" height="16" /> ';
+        }
+        $res .= $this->trans('Sent').'</a></li>';
         $this->concat('formatted_folder_list', $res);
     }
 }
@@ -609,7 +608,7 @@ class Hm_Output_compose_form_draft_list extends Hm_Output_Module {
             if (trim($draft['draft_subject'])) {
                 $res .= '<div class="draft_'.$this->html_safe($id).'"><a class="draft_link" href="?page=compose&draft_id='.
                     $this->html_safe($id).'">'.$this->html_safe($draft['draft_subject']).'</a> '.
-                    '<img class="delete_draft" data-id="'.$this->html_safe($id).'" src="'.Hm_Image_Sources::$circle_x.'" /></div>';
+                    '<img class="delete_draft" width="16" height="16" data-id="'.$this->html_safe($id).'" src="'.Hm_Image_Sources::$circle_x.'" /></div>';
             }
         }
         $res .= '</div>';
@@ -867,8 +866,11 @@ class Hm_Output_display_configured_smtp_servers extends Hm_Output_Module {
  */
 class Hm_Output_compose_page_link extends Hm_Output_Module {
     protected function output() {
-        $res = '<li class="menu_compose"><a class="unread_link" href="?page=compose">'.
-            '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$doc).'" alt="" width="16" height="16" /> '.$this->trans('Compose').'</a></li>';
+        $res = '<li class="menu_compose"><a class="unread_link" href="?page=compose">';
+        if (!$this->get('hide_folder_icons')) {
+            $res .= '<img class="account_icon" src="'.$this->html_safe(Hm_Image_Sources::$doc).'" alt="" width="16" height="16" /> ';
+        }
+        $res .= $this->trans('Compose').'</a></li>';
 
         if ($this->format == 'HTML5') {
             return $res;
@@ -923,28 +925,8 @@ function smtp_server_dropdown($data, $output_mod, $recip, $selected_id=false) {
 }
 
 /**
- * @subpackage smtp/functions
- */
-function build_mime_msg($to, $subject, $body, $from) {
-    $headers = array(
-        'from' => $from,
-        'to' => $to,
-        'subject' => $subject,
-        'date' => date('r')
-    );
-    $body = array(
-        1 => array(
-            'type' => TYPETEXT,
-            'subtype' => 'plain',
-            'contents.data' => $body
-        )
-    );
-    return imap_mail_compose($headers, $body);
-}
-
-/**
  * Check for and do an Oauth2 token reset if needed
- * @param array $server imap server data
+ * @param array $server SMTP server data
  * @param object $config site config object
  * @return mixed
  */
@@ -1112,3 +1094,21 @@ function get_draft($id, $session) {
     }
     return false;
 }
+
+/**
+ * @subpackage smtp/functions
+ */
+function attach_file($content, $file, $filepath, $draft_id, $mod) {
+    $content = Hm_Crypt::ciphertext($content, Hm_Request_Key::generate());
+    $filename = hash('sha512', $content);
+    $filepath = rtrim($filepath, '/');
+    if (@file_put_contents($filepath.'/'.$filename, $content)) {
+        $file['filename'] = $filepath.'/'.$filename;
+        $file['basename'] = $filename;
+        save_uploaded_file($draft_id, $file, $mod->session);
+        $mod->out('upload_file_details', $file);
+        return true;
+    }
+    return false;
+}
+

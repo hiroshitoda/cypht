@@ -813,9 +813,11 @@ class Hm_Output_filter_pop3_folders extends Hm_Output_Module {
         $res = '';
         foreach ($this->get('pop3_folders', array()) as $id => $folder) {
             $res .= '<li class="pop3_'.$this->html_safe($id).'">'.
-                '<a data-id="pop3_'.$this->html_safe($id).'" href="?page=message_list&list_path=pop3_'.$this->html_safe($id).'">'.
-                '<img class="account_icon" alt="Toggle folder" src="'.Hm_Image_Sources::$folder.'" width="16" height="16" /> '.
-                $this->html_safe($folder).'</a></li>';
+                '<a data-id="pop3_'.$this->html_safe($id).'" href="?page=message_list&list_path=pop3_'.$this->html_safe($id).'">';
+            if (!$this->get('hide_folder_icons')) {
+                $res .= '<img class="account_icon" alt="Toggle folder" src="'.Hm_Image_Sources::$folder.'" width="16" height="16" /> ';
+            }
+            $res .= $this->html_safe($folder).'</a></li>';
         }
         if ($res) {
             $this->append('folder_sources', array('email_folders', $res));
@@ -985,6 +987,7 @@ class Hm_Output_filter_pop3_status_data extends Hm_Output_Module {
  */
 function format_pop3_message_list($msg_list, $output_module, $style, $login_time, $list_parent) {
     $res = array();
+    $show_icons = $output_module->get('msg_list_icons');
     foreach($msg_list as $msg_id => $msg) {
         $icon = 'env_open';
         $row_class = 'email';
@@ -1024,6 +1027,9 @@ function format_pop3_message_list($msg_list, $output_module, $style, $login_time
             $flags = array('unseen');
         }
         $row_class .= ' '.str_replace(' ', '_', $msg['server_name']);
+        if (!$show_icons) {
+            $icon = false;
+        }
         if ($style == 'news') {
             $res[$id] = message_list_row(array(
                     array('checkbox_callback', $id),
